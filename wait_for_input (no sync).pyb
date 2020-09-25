@@ -1,0 +1,401 @@
+import bpy
+from bpy.props import BoolProperty
+from bpy.types import Operator, Panel
+from zpy import Is, register_keymaps, keyframe, utils, Get
+km = register_keymaps()
+
+
+# Play animation for these keys
+play_keys = {
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
+    'LEFTMOUSE', 'PEN', 'ACTIONMOUSE',
+    'TAB', 'RET',
+}
+
+# Bypass/Ignore these keys
+nav_keys = {
+    'RIGHTMOUSE',
+    'MIDDLEMOUSE', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE',
+    'MOUSEROTATE', 'WHEELINMOUSE', 'WHEELOUTMOUSE',
+    'LEFT_CTRL', 'LEFT_ALT', 'LEFT_SHIFT',
+    'RIGHT_ALT', 'RIGHT_CTRL', 'RIGHT_SHIFT',
+    'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE', 'TRACKPADPAN', 'TRACKPADZOOM',
+    'EVT_TWEAK_L', 'EVT_TWEAK_M', 'EVT_TWEAK_R', 'EVT_TWEAK_A', 'EVT_TWEAK_S',
+    'LEFT_ARROW', 'DOWN_ARROW', 'RIGHT_ARROW', 'UP_ARROW',
+    'Z',
+}
+
+other_keys = {
+    'RIGHTMOUSE', 'SPACE', 'ESC',
+    'ACCENT_GRAVE',  # default FPS hotkey in 2.8
+    'NONE',
+
+    # To Sort:
+    'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10',
+    'F11', 'F12', 'F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19',
+    'ZERO', 'ONE', 'TWO', 'THREE', 'FOUR',
+    'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE',
+    'BUTTON4MOUSE', 'BUTTON5MOUSE', 'BUTTON6MOUSE', 'BUTTON7MOUSE',
+    'SELECTMOUSE', 'ERASER', 'OSKEY', 'GRLESS',
+    'LINE_FEED', 'BACK_SPACE', 'DEL', 'SEMI_COLON', 'PERIOD',
+    'COMMA', 'QUOTE', 'MINUS', 'PLUS', 'SLASH', 'BACK_SLASH',
+    'EQUAL', 'LEFT_BRACKET', 'RIGHT_BRACKET',
+    'NUMPAD_0', 'NUMPAD_9', 'NUMPAD_PERIOD', 'NUMPAD_SLASH',
+    'NUMPAD_ASTERIX', 'NUMPAD_MINUS', 'NUMPAD_ENTER', 'NUMPAD_PLUS',
+    'PAUSE', 'INSERT', 'HOME', 'PAGE_UP', 'PAGE_DOWN', 'END',
+    'MEDIA_PLAY', 'MEDIA_STOP', 'MEDIA_FIRST', 'MEDIA_LAST', 'TEXTINPUT',
+    'WINDOW_DEACTIVATE', 'TIMER', 'TIMER0', 'TIMER1', 'TIMER2',
+    'TIMER_JOBS', 'TIMER_AUTOSAVE', 'TIMER_REPORT', 'TIMERREGION',
+
+    'NDOF_MOTION', 'NDOF_BUTTON_MENU', 'NDOF_BUTTON_FIT', 'NDOF_BUTTON_TOP',
+    'NDOF_BUTTON_BOTTOM', 'NDOF_BUTTON_LEFT', 'NDOF_BUTTON_RIGHT',
+    'NDOF_BUTTON_FRONT', 'NDOF_BUTTON_BACK', 'NDOF_BUTTON_ISO1',
+    'NDOF_BUTTON_ISO2', 'NDOF_BUTTON_ROLL_CW', 'NDOF_BUTTON_ROLL_CCW',
+    'NDOF_BUTTON_SPIN_CW', 'NDOF_BUTTON_SPIN_CCW', 'NDOF_BUTTON_TILT_CW',
+    'NDOF_BUTTON_TILT_CCW', 'NDOF_BUTTON_ROTATE', 'NDOF_BUTTON_PANZOOM',
+    'NDOF_BUTTON_DOMINANT', 'NDOF_BUTTON_PLUS', 'NDOF_BUTTON_MINUS',
+    'NDOF_BUTTON_ESC', 'NDOF_BUTTON_ALT', 'NDOF_BUTTON_SHIFT',
+    'NDOF_BUTTON_CTRL', 'NDOF_BUTTON_1', 'NDOF_BUTTON_10', 'NDOF_BUTTON_A',
+    'NDOF_BUTTON_B', 'NDOF_BUTTON_C',
+}
+
+
+class animation:
+    in_modal = False
+    custom_playing = False
+    custom_playback = False  # Just running slowmo playback
+    selected = list()
+    last_frame = -1e309  # -inf
+
+    def __init__(self, scn=None, scr=None):
+        animation.last_frame = -1e309  # -inf
+        if (scn and scr):
+            animation.play(scn, scr)
+
+    def play(scn, scr):
+        def playback():
+            prefs = utils.prefs(__package__)
+            fac = prefs.factor
+            stop = prefs.stop_at_end
+            loop = prefs.loop_playback
+
+            # if (not scr.get('is_animation_playing')) or scr.is_animation_playing \
+                # or (not animation.custom_playing):
+            if (not scr.get('is_animation_playing')) or (not animation.custom_playing):
+                scn.frame_set(scn.frame_current, subframe=0)
+                return
+
+            preview = ("_", "_preview_")[scn.use_preview_range]
+            frame_current = scn.frame_current
+            frame_start = eval(f'scn.frame{preview}start')
+            frame_end = eval(f'scn.frame{preview}end')
+
+            at_end = ((frame_current >= frame_end) or (frame_current < animation.last_frame))
+
+            if stop and at_end and (not loop):
+                scn.frame_set(frame_end, subframe=0)
+                return animation.stop(scr)
+
+            animation.last_frame = frame_current
+
+            offset = 1 / fac
+
+            if loop and at_end:
+                scn.frame_set(frame_start, subframe=0)
+                animation.keyframe_insert(scn.frame_current)
+            else:
+                final = scn.frame_current + scn.frame_subframe + offset
+                frame = int(final)
+                subframe = final - int(final)
+                if (frame < 0 and subframe) or subframe < 0:
+                    # Negative numbers have to offset a little for frame_set
+                    frame -= 1
+                    subframe = 1 - abs(subframe)
+
+                insert_keys = animation.keyframe_insert(scn, scn.frame_current)
+
+                def trans(src, loc, rot, scale):
+                    items = dict()
+                    if loc:
+                        items['location'] = src.location[:]
+                    if rot:
+                        items['rotation_euler'] = src.rotation_euler[:]
+                        items['rotation_quaternion'] = src.rotation_quaternion[:]
+                        items['rotation_axis_angle'] = src.rotation_axis_angle[:]
+                    if scale:
+                        items['scale'] = src.scale[:]
+                    return items
+
+                # lrc = dict()
+                # if insert_keys:
+                    # # Store poses before changing frame
+                    # for src in animation.selected:
+                        # lrc[src] = trans(src, *insert_keys)
+                        # for ik in Get.ik_chain(src):
+                            # lrc[ik] = trans(ik, *insert_keys)
+
+                # scn.frame_set(scn.frame_current, subframe=scn.frame_subframe + offset)
+                scn.frame_set(frame, subframe=subframe)
+
+                # # Restore the active poses
+                # for (src, items) in lrc.items():
+                    # for (attrib, value) in items.items():
+                        # setattr(src, attrib, value)
+
+            # 1 = one second
+            # fps = frames to view in a second
+            # basically, split the number of frames, so to repeat that many times in one second
+            return offset / scn.render.fps
+
+        animation.custom_playing = True
+        scr['is_animation_playing'] = True
+        utils.register_timer(0, playback)
+        # animation.keyframe_insert(scn.frame_current)
+
+    def keyframe_insert(scn, frame):
+        if animation.custom_playback:
+            return
+
+        context = bpy.context
+        prefs = utils.prefs(__package__)
+        loc = prefs.use_location
+        rot = prefs.use_rotation
+        scale = prefs.use_scale
+
+        if not (loc or rot or scale):
+            ks = scn.keying_sets_all.active
+            if (ks is None) or (not keyframe.use_keyingset(context)):
+                loc = rot = scale = True
+            elif ks.bl_idname == 'Variable':
+                loc = keyframe.poll_keyingset(context, 'key_location')
+                rot = keyframe.poll_keyingset(context, 'key_rotation')
+                scale = keyframe.poll_keyingset(context, 'key_scale')
+            else:
+                ks = ks.bl_idname.replace('Visual ', '')
+                loc = ks in ('Location', 'LocRot', 'LocScale', 'LocRotScale')
+                rot = ks in ('Rotation', 'LocRot', 'LocRotScale', 'RotScale')
+                scale = ks in ('Scaling', 'LocScale', 'LocRotScale', 'RotScale')
+                # 'WholeCharacter', 'WholeCharacterSelected'
+
+            if not (loc or rot or scale):
+                return
+
+        def key(src, **kargs):
+            if keyframe.poll_insert(context, src=src):
+                if loc:
+                    keyframe.location(context, src, **kargs)
+                if rot:
+                    keyframe.rotation(context, src, **kargs)
+                if scale:
+                    keyframe.scale(context, src, **kargs)
+
+        for src in animation.selected:
+            key(src, frame=frame)
+            for ik in Get.ik_chain(src):
+                if (ik not in animation.selected):
+                    key(ik, frame=frame, options={'INSERTKEY_VISUAL'})
+
+        return (loc, rot, scale)
+
+    def stop(scr):
+        # scr = context.screen
+        if scr.get('is_animation_playing'):
+            del scr['is_animation_playing']
+        animation.custom_playing = False
+        animation.custom_playback = False
+        animation.selected = list()
+
+
+class PLAYBACK_OT_wait_for_input(Operator):
+    bl_description = "Begin animation playback after pressing an action key"\
+        ".\nClick + Alt/Shift/Ctrl to restore frame when done"
+    bl_idname = 'zpy.wait_for_input'
+    bl_label = "Wait For Input"
+    # bl_options = {'REGISTER', 'UNDO'}
+
+    keypress = None
+
+    @classmethod
+    def poll(self, context):
+        return (not Is.animation_playing(context)) and (not animation.in_modal) \
+            and (not animation.custom_playing)
+
+    def invoke(self, context, event):
+        if event.type in {'LEFTMOUSE', 'RET'}:
+            self.restore_frame = any((event.alt, event.shift, event.ctrl))
+        else:
+            self.report({'INFO'}, "Waiting for Input")
+        self.keypress = event.type
+        self.startup = True
+        # return self.execute(context)
+
+    # def execute(self, context):
+        context.window_manager.modal_handler_add(self)
+        animation.in_modal = True
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if self.startup:
+            # if event.type not in {'MOUSEMOVE'}:
+                # debug(event.type, event.value)
+            if event.type == self.keypress:
+                self.startup = False
+        elif (event.type == 'SPACE') and utils.prefs(__package__).use_timer:
+            if animation.in_modal:
+                # Waiting for input
+                if event.shift:
+                    return self.exit_pass(context)
+                elif event.value != 'PRESS':
+                    animation.custom_playback = True
+                    animation.selected = list()
+                    return self.exit_play(context)  # .union({'FINISHED'})
+                else:
+                    return {'RUNNING_MODAL'}
+            else:
+                # Running playback
+                if event.value != 'PRESS':
+                    return self.exit_stop(context)
+                else:
+                    return {'RUNNING_MODAL'}
+        elif animation.custom_playback:
+            # Doing slowmo playback
+            if event.type == 'ESC':
+                return self.exit_stop(context)
+        elif animation.in_modal:
+            # Waiting for input
+
+            if event.type in {'SPACE', 'ESC'}:
+                return self.exit_pass(context)
+            elif event.type == 'RIGHTMOUSE':
+                # Make room for dragging things, or cancel with single click
+                if event.value == 'CLICK_DRAG':
+                    animation.selected = Get.selected(context)
+                    return self.exit_play(context)
+                elif event.value in {'CLICK', 'RELEASE'}:
+                    return self.exit_pass(context)
+            elif event.value in {'PRESS', 'CLICK', 'DOUBLE_CLICK'}:
+                                # 'ANY', 'NOTHING', 'RELEASE'
+                if event.type in play_keys:
+                    animation.selected = Get.selected(context)
+                    return self.exit_play(context)
+                elif event.type == 'ACCENT_GRAVE':
+                    animation.selected = Get.selected(context)
+                    return self.exit_play(context).union(self.exit_pass(context))
+                elif event.type not in nav_keys:
+                    return self.exit_pass(context)
+        else:
+            # Waiting to finish recording
+
+            if event.type == 'SPACE' and self.restore_frame:
+                return {'FINISHED'}
+            elif event.type in {'SPACE', 'ESC', 'RIGHTMOUSE'} \
+                    or event.value in {'PRESS', 'CLICK', 'DOUBLE_CLICK'}:
+                return self.exit_stop(context)
+
+        return {'PASS_THROUGH'}
+        return {'RUNNING_MODAL'}
+
+    def exit_pass(self, context):
+        "Exit operator and do nothing"
+        animation.in_modal = False
+
+        animation.stop(context.screen)
+
+        self.report({'INFO'}, "Cancel Wait for Input")
+        return {'PASS_THROUGH', 'CANCELLED'}
+
+    def exit_play(self, context):
+        "Begin recording animation"
+        animation.in_modal = False
+
+        if utils.prefs(__package__).use_timer:
+            scn = context.scene
+            scr = context.screen
+            animation(scn, scr)
+        else:
+            bpy.ops.screen.animation_play('INVOKE_DEFAULT')
+
+        return {'PASS_THROUGH'}
+
+    def exit_stop(self, context):
+        "Was recording, now exit operation"
+        if utils.prefs(__package__).use_timer:
+            animation.stop(context.screen)
+        else:
+            # if Is.animation_playing():
+            #     bpy.ops.screen.animation_play('INVOKE_DEFAULT')
+            bpy.ops.screen.animation_cancel(restore_frame=self.restore_frame)
+                # If restore frame, the animation will jump back
+                # to the initial frame. This MAY
+
+        return {'PASS_THROUGH', 'FINISHED'}
+
+    # from_ui: BoolProperty(default=True, options=set({'HIDDEN', 'SKIP_SAVE'}))
+    restore_frame: BoolProperty(
+        name="Restore Frame",
+        description="Return to the initial frame after stopping playback",
+        default=False,
+        options={'SKIP_SAVE'},
+    )
+
+
+class WAIT_PT_ui(Panel):
+    bl_category = "Tool"
+    bl_label = "Wait For Input"
+    # bl_options = {'DEFAULT_CLOSED'}
+    bl_region_type = 'UI'
+    bl_space_type = 'VIEW_3D'
+
+    @classmethod
+    def poll(cls, context):
+        # "Only display a panel if it's in the workspace"
+        # return context.area.type == 'PROPERTIES'
+        return context.mode in ('OBJECT', 'POSE')
+
+    def draw_header(self, context):
+        layout = self.layout
+
+    def draw(self, context):
+        layout = self.layout
+        prefs = utils.prefs(__package__)
+
+        if animation.in_modal or animation.custom_playing:
+            layout.active = False
+
+        col = layout.column(align=True)
+        row = col.row(align=True)
+
+        row.prop(prefs, 'use_timer', toggle=True)
+        if prefs.use_timer:
+            row.prop(prefs, 'loop_playback', text="", icon='FILE_REFRESH', toggle=True)
+            end = row.row()
+            end.active = (not prefs.loop_playback)
+            end.prop(prefs, 'stop_at_end', text="", icon='FF', toggle=True)
+        else:
+            icon = ('FILE_REFRESH', 'PAUSE')[context.screen.stop_loop]
+            row.prop(context.screen, 'stop_loop', text="", icon=icon)
+
+        col2 = col.column(align=True)
+        col2.active = prefs.use_timer
+
+        rfps = context.scene.render.fps
+        fps = f"{round(rfps / (1 * prefs.factor), 1)} fps"
+        col2.prop(prefs, 'factor', text=fps, icon='TIME', slider=False)
+
+        row = col2.row(align=True)
+        row.prop(prefs, 'use_location', text="Loc", toggle=True)
+        row.prop(prefs, 'use_rotation', text="Rot", toggle=True)
+        row.prop(prefs, 'use_scale', text="Scale", toggle=True)
+
+
+def register():
+    kargs = dict(name='Window', type='SPACE', shift=True)
+    km.toggle('wm.toolbar', value='PRESS', **kargs)
+    km.add('wm.toolbar', value='CLICK', **kargs)
+    km.add(PLAYBACK_OT_wait_for_input, name='Frames', type='SPACE',
+           value='CLICK_DRAG', shift=True)  # , from_ui=False)
+
+
+def unregister():
+    km.remove()
