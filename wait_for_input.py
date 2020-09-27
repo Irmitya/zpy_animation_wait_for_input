@@ -346,7 +346,7 @@ class PLAYBACK_OT_wait_for_input(Operator):
         elif animation.in_modal:
             # Waiting for input
 
-            if event.type in {'SPACE', 'ESC'}:
+            if event.type in {'SPACE', 'ESC'} and not event.shift:
                 return self.exit_pass(context)
             elif event.type == 'RIGHTMOUSE':
                 # Make room for dragging things, or cancel with single click
