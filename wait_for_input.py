@@ -301,10 +301,11 @@ class PLAYBACK_OT_wait_for_input(Operator):
     def invoke(self, context, event):
         if event.type in {'LEFTMOUSE', 'RET'}:
             self.restore_frame = any((event.alt, event.shift, event.ctrl))
+            self.startup = False
         else:
             self.report({'INFO'}, "Waiting for Input")
+            self.startup = True
         self.keypress = event.type
-        self.startup = True
         self.wait_delays = 0
 
         context.window_manager.modal_handler_add(self)
