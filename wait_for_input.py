@@ -307,9 +307,9 @@ class PLAYBACK_OT_wait_for_input(Operator):
             self.startup = True
         self.keypress = event.type
         self.wait_delays = 0
+        animation.in_modal = True
 
         context.window_manager.modal_handler_add(self)
-        animation.in_modal = True
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
