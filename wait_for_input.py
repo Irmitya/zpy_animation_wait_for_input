@@ -480,6 +480,9 @@ class WAIT_PT_ui(Panel):
         row.prop_enum(context.scene, 'sync_mode', 'FRAME_DROP')
         row.prop_enum(context.scene, 'sync_mode', 'AUDIO_SYNC')
 
+        rd = context.scene.render
+        layout.prop(rd, 'fps_base', text=f"{round(rd.fps / rd.fps_base, 1)} fps")
+
 
 def register():
     kargs = dict(name='Window', type='SPACE', shift=True)
