@@ -457,7 +457,7 @@ class WAIT_PT_ui(Panel):
         row.prop(prefs, 'use_timer', toggle=True)
         if prefs.use_timer:
             end = row.row(align=True)
-            end.active = (not prefs.stop_loop)
+            end.enabled = (prefs.stop_loop)
             end.prop(prefs, 'stop_at_end', text="", icon='FF', toggle=True)
         icon = ('FILE_REFRESH', 'PAUSE')[prefs.stop_loop]
         row.prop(prefs, 'stop_loop', text="", icon=icon)
